@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2011 The Android Open Source Project
  * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012, The CyanogenMod Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +16,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "qcom_audio_hw_hal"
+#define LOG_TAG "audio.primary.msm7x30"
 //#define LOG_NDEBUG 0
 
 #include <stdint.h>
@@ -152,6 +153,7 @@ static ssize_t out_write(struct audio_stream_out *stream, const void* buffer,
 {
     struct qcom_stream_out *out =
         reinterpret_cast<struct qcom_stream_out *>(stream);
+    usleep(5);
     return out->qcom_out->write(buffer, bytes);
 }
 
@@ -314,6 +316,7 @@ static uint32_t adev_get_supported_devices(const struct audio_hw_device *dev)
      * below input/output devices and cross our fingers. To do things properly,
      * audio hardware interfaces that need advanced features (like this) should
      * convert to the new HAL interface and not use this wrapper. */
+	 //return (AUDIO_DEVICE_OUT_DEFAULT | AUDIO_DEVICE_OUT_DEFAULT);
     return (/* OUT */
             AUDIO_DEVICE_OUT_EARPIECE |
             AUDIO_DEVICE_OUT_SPEAKER |
@@ -321,10 +324,6 @@ static uint32_t adev_get_supported_devices(const struct audio_hw_device *dev)
             AUDIO_DEVICE_OUT_WIRED_HEADPHONE |
             AUDIO_DEVICE_OUT_AUX_DIGITAL |
             AUDIO_DEVICE_OUT_ALL_SCO |
-#ifdef QCOM_ANC_HEADSET_ENABLED
-            AUDIO_DEVICE_OUT_ANC_HEADSET |
-            AUDIO_DEVICE_OUT_ANC_HEADPHONE |
-#endif
             AUDIO_DEVICE_OUT_ANLG_DOCK_HEADSET |
             AUDIO_DEVICE_OUT_DGTL_DOCK_HEADSET |
 #ifdef QCOM_FM_ENABLED
@@ -336,9 +335,6 @@ static uint32_t adev_get_supported_devices(const struct audio_hw_device *dev)
 #ifdef QCOM_VOIP_ENABLED
             AUDIO_DEVICE_OUT_DIRECTOUTPUT |
 #endif
-#ifdef QCOM_PROXY_DEVICE_ENABLED
-            AUDIO_DEVICE_OUT_PROXY |
-#endif
             AUDIO_DEVICE_OUT_DEFAULT |
             /* IN */
             AUDIO_DEVICE_IN_VOICE_CALL |
@@ -349,9 +345,6 @@ static uint32_t adev_get_supported_devices(const struct audio_hw_device *dev)
             AUDIO_DEVICE_IN_AUX_DIGITAL |
             AUDIO_DEVICE_IN_BACK_MIC |
             AUDIO_DEVICE_IN_ALL_SCO |
-#ifdef QCOM_ANC_HEADSET_ENABLED
-            AUDIO_DEVICE_IN_ANC_HEADSET |
-#endif
 #ifdef QCOM_FM_ENABLED
             AUDIO_DEVICE_IN_FM_RX |
             AUDIO_DEVICE_IN_FM_RX_A2DP |
@@ -430,8 +423,7 @@ static size_t adev_get_input_buffer_size(const struct audio_hw_device *dev,
                                          const struct audio_config *config)
 {
     const struct qcom_audio_device *qadev = to_cladev(dev);
-    uint8_t channelCount = popcount(config->channel_mask);
-    return qadev->hwif->getInputBufferSize(config->sample_rate, config->format, channelCount);
+    return qadev->hwif->getInputBufferSize(config->sample_rate, config->format, popcount(config->channel_mask));
 }
 
 #ifdef QCOM_TUNNEL_LPA_ENABLED

@@ -1999,7 +1999,11 @@ status_t AudioHardware::enableComboDevice(uint32_t sndDevice, bool enableOrDisab
             return NO_ERROR;
         }
 
-        if(!LpaNode && !PcmNode) {
+        if(
+#ifdef QCOM_TUNNEL_LPA_ENABLED
+         !LpaNode &&
+#endif
+         !PcmNode) {
             ALOGE("No active playback session active bailing out ");
             cur_rx = DEVICE_FMRADIO_STEREO_RX;
             return NO_ERROR;
@@ -2015,10 +2019,12 @@ status_t AudioHardware::enableComboDevice(uint32_t sndDevice, bool enableOrDisab
                     temp = PcmNode;
                     CurrentComboDeviceData.StreamType = PCM_PLAY;
                     ALOGD("PCM_PLAY session Active ");
+#ifdef QCOM_TUNNEL_LPA_ENABLED
                 }else if(LpaNode){
                     temp = LpaNode;
                     CurrentComboDeviceData.StreamType = LPA_DECODE;
                     ALOGD("LPA_DECODE session Active ");
+#endif
                 } else {
                     ALOGE("no PLAYback session Active ");
                     return -1;
@@ -2134,8 +2140,15 @@ status_t AudioHardware::disableFM()
        }
     }
     deleteFromTable(FM_RADIO);
-    if(!getNodeByStreamType(VOICE_CALL) && !getNodeByStreamType(LPA_DECODE)
-        && !getNodeByStreamType(PCM_PLAY) && !getNodeByStreamType(VOIP_CALL)) {
+    if(!getNodeByStreamType(VOICE_CALL)
+#ifdef QCOM_TUNNEL_LPA_ENABLED
+      && !getNodeByStreamType(LPA_DECODE)
+#endif
+        && !getNodeByStreamType(PCM_PLAY)
+#ifdef QCOM_VOIP_ENABLED
+        && !getNodeByStreamType(VOIP_CALL)
+#endif
+        ) {
         if(enableDevice(cur_rx, 0)) {
             ALOGV("Disable device[%d] failed errno = %d",DEV_ID(cur_rx),errno);
             return 0;
@@ -2248,7 +2261,9 @@ status_t AudioHardware::AudioSessionOutMSM8x60::set(
                 ALOGE("msm_route_stream failed");
                 return -1;
             }
+#ifdef QCOM_TUNNEL_LPA_ENABLED
             CurrentComboDeviceData.StreamType = LPA_DECODE;
+#endif
         }
 #endif
 
@@ -2454,7 +2469,7 @@ ssize_t AudioHardware::AudioStreamOutMSM8x60::write(const void* buffer, size_t b
         config.sample_rate = sampleRate();
         config.buffer_size = bufferSize();
         config.buffer_count = AUDIO_HW_NUM_OUT_BUF;
-        config.codec_type = CODEC_TYPE_PCM;
+        config.type = CODEC_TYPE_PCM;
         status = ioctl(mFd, AUDIO_SET_CONFIG, &config);
         if (status < 0) {
             ALOGE("Cannot set config");
@@ -2514,6 +2529,7 @@ ssize_t AudioHardware::AudioStreamOutMSM8x60::write(const void* buffer, size_t b
             Mutex::Autolock lock_1(mComboDeviceLock);
 #ifdef QCOM_FM_ENABLED
             if(CurrentComboDeviceData.DeviceId == SND_DEVICE_FM_TX_AND_SPEAKER){
+#ifdef QCOM_TUNNEL_LPA_ENABLED
                 Routing_table *LpaNode = getNodeByStreamType(LPA_DECODE);
                 /* This de-routes the LPA being routed on to speaker, which is done in
                   * enablecombo()
@@ -2527,6 +2543,7 @@ ssize_t AudioHardware::AudioStreamOutMSM8x60::write(const void* buffer, size_t b
                             return -1;
                     }
                 }
+#endif
                 ALOGD("Routing PCM stream to speaker for combo device");
                 ALOGD("combo:msm_route_stream(PCM_PLAY,session id:%d,dev id:%d,1)",dec_id,
                     DEV_ID(DEVICE_SPEAKER_RX));
@@ -3047,11 +3064,11 @@ status_t AudioHardware::AudioStreamInMSM8x60::set(
             ALOGE("Cannot open /dev/msm_pcm_in errno: %d", errno);
             goto Error;
         }
-        mFd = status;
+        mFdin = status;
         // configuration
         ALOGV("get config");
         struct msm_audio_config config;
-        status = ioctl(mFd, AUDIO_GET_CONFIG, &config);
+        status = ioctl(mFdin, AUDIO_GET_CONFIG, &config);
         if (status < 0) {
             ALOGE("Cannot read config");
             goto Error;
@@ -3062,11 +3079,11 @@ status_t AudioHardware::AudioStreamInMSM8x60::set(
         config.sample_rate = *pRate;
         config.buffer_size = bufferSize();
         config.buffer_count = 2;
-        config.codec_type = CODEC_TYPE_PCM;
-        status = ioctl(mFd, AUDIO_SET_CONFIG, &config);
+        config.type = CODEC_TYPE_PCM;
+        status = ioctl(mFdin, AUDIO_SET_CONFIG, &config);
         if (status < 0) {
             ALOGE("Cannot set config");
-            if (ioctl(mFd, AUDIO_GET_CONFIG, &config) == 0) {
+            if (ioctl(mFdin, AUDIO_GET_CONFIG, &config) == 0) {
                 if (config.channel_count == 1) {
                     *pChannels = AudioSystem::CHANNEL_IN_MONO;
                 } else {
@@ -3078,7 +3095,7 @@ status_t AudioHardware::AudioStreamInMSM8x60::set(
         }
 
         ALOGV("confirm config");
-        status = ioctl(mFd, AUDIO_GET_CONFIG, &config);
+        status = ioctl(mFdin, AUDIO_GET_CONFIG, &config);
         if (status < 0) {
             ALOGE("Cannot read config");
             goto Error;
@@ -3134,7 +3151,7 @@ status_t AudioHardware::AudioStreamInMSM8x60::set(
         // Make buffers to be allocated in driver equal to the number of buffers
         // that AudioFlinger allocates (Shared memory)
         config.buffer_count = 4;
-        config.codec_type = CODEC_TYPE_PCM;
+        config.type = CODEC_TYPE_PCM;
         status = ioctl(mFdin, AUDIO_SET_CONFIG, &config);
         if (status < 0) {
             ALOGE("Cannot set config");
@@ -3204,6 +3221,20 @@ status_t AudioHardware::AudioStreamInMSM8x60::set(
         return NO_ERROR;
     }
 #ifdef QCOM_ACDB_ENABLED
+    int (*msm8x60_set_audpre_params)(int, int);
+    msm8x60_set_audpre_params = (int (*)(int, int))::dlsym(acoustic, "msm8x60_set_audpre_params");
+    if ((*msm8x60_set_audpre_params) == 0) {
+        ALOGI("msm8x60_set_audpre_params not present");
+        return NO_ERROR;
+    }
+
+    int (*msm8x60_enable_audpre)(int, int, int);
+    msm8x60_enable_audpre = (int (*)(int, int, int))::dlsym(acoustic, "msm8x60_enable_audpre");
+    if ((*msm8x60_enable_audpre) == 0) {
+        ALOGI("msm8x60_enable_audpre not present");
+        return NO_ERROR;
+    }
+
     audpre_index = calculate_audpre_table_index(mSampleRate);
     tx_iir_index = (audpre_index * 2) + (hw->checkOutputStandby() ? 0 : 1);
     ALOGD("audpre_index = %d, tx_iir_index = %d\n", audpre_index, tx_iir_index);
@@ -3211,14 +3242,10 @@ status_t AudioHardware::AudioStreamInMSM8x60::set(
     /**
      * If audio-preprocessing failed, we should not block record.
      */
-    int (*msm8x60_set_audpre_params)(int, int);
-    msm8x60_set_audpre_params = (int (*)(int, int))::dlsym(acoustic, "msm8x60_set_audpre_params");
     status = msm8x60_set_audpre_params(audpre_index, tx_iir_index);
     if (status < 0)
         ALOGE("Cannot set audpre parameters");
 
-    int (*msm8x60_enable_audpre)(int, int, int);
-    msm8x60_enable_audpre = (int (*)(int, int, int))::dlsym(acoustic, "msm8x60_enable_audpre");
     mAcoustics = acoustic_flags;
     status = msm8x60_enable_audpre((int)acoustic_flags, audpre_index, tx_iir_index);
     if (status < 0)
@@ -3263,7 +3290,7 @@ ssize_t AudioHardware::AudioStreamInMSM8x60::read( void* buffer, ssize_t bytes)
         }
 #ifdef QCOM_FM_ENABLED
         if((mDevices == AudioSystem::DEVICE_IN_FM_RX) || (mDevices == AudioSystem::DEVICE_IN_FM_RX_A2DP) ){
-            if(ioctl(mFd, AUDIO_GET_SESSION_ID, &dec_id)) {
+            if(ioctl(mFdin, AUDIO_GET_SESSION_ID, &dec_id)) {
                 ALOGE("AUDIO_GET_SESSION_ID failed*********");
                 hw->mLock.unlock();
                 return -1;
@@ -3297,7 +3324,7 @@ ssize_t AudioHardware::AudioStreamInMSM8x60::read( void* buffer, ssize_t bytes)
             hw->mLock.unlock();
         } else
 #endif
-//        {
+        {
             hw->mLock.unlock();
             if(ioctl(mFdin, AUDIO_GET_SESSION_ID, &dec_id)) {
                 ALOGE("AUDIO_GET_SESSION_ID failed*********");
@@ -3323,7 +3350,7 @@ ssize_t AudioHardware::AudioStreamInMSM8x60::read( void* buffer, ssize_t bytes)
                  addToTable(dec_id,cur_tx,INVALID_DEVICE,PCM_REC,true);
             }
             mFirstread = false;
-//        }
+        }
     }
 
 
@@ -3356,6 +3383,7 @@ ssize_t AudioHardware::AudioStreamInMSM8x60::read( void* buffer, ssize_t bytes)
         }
         while (count >= mBufferSize) {
             ssize_t bytesRead = ::read(mFdin, buffer, count);
+            usleep(1);
             if (bytesRead >= 0) {
                 count -= bytesRead;
                 p += bytesRead;
