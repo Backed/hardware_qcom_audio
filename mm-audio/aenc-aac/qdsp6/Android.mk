@@ -10,9 +10,9 @@ include $(CLEAR_VARS)
 libOmxAacEnc-def := -g -O3
 libOmxAacEnc-def += -DQC_MODIFIED
 libOmxAacEnc-def += -D_ANDROID_
-libOmxAacEnc-def += -D_ENABLE_QC_MSG_LOG_
-libOmxAacEnc-def += -DVERBOSE
-libOmxAacEnc-def += -D_DEBUG
+#libOmxAacEnc-def += -D_ENABLE_QC_MSG_LOG_
+#libOmxAacEnc-def += -DVERBOSE
+#libOmxAacEnc-def += -D_DEBUG
 ifeq ($(strip $(QC_PROP)),true)
 libOmxAacEnc-def += -DAUDIOV2
 endif
@@ -36,8 +36,8 @@ LOCAL_SHARED_LIBRARIES  := libutils liblog
 LOCAL_SRC_FILES         := src/aenc_svr.c
 LOCAL_SRC_FILES         += src/omx_aac_aenc.cpp
 
-LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
-LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+#LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
+#LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
 
 include $(BUILD_SHARED_LIBRARY)
 

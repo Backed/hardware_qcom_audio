@@ -15,6 +15,8 @@ $(shell touch $(OUT)/obj/SHARED_LIBRARIES/libacdbloader_intermediates/export_inc
 
 LOCAL_ARM_MODE := arm
 LOCAL_CFLAGS := -D_POSIX_SOURCE
+LOCAL_CFLAGS += -DQCOM_ACDB_ENABLED
+LOCAL_CFLAGS += -DQCOM_PROXY_DEVICE_ENABLED
 
 LOCAL_SRC_FILES := \
   AudioHardwareALSA.cpp 	\
@@ -22,7 +24,8 @@ LOCAL_SRC_FILES := \
   AudioStreamInALSA.cpp 	\
   ALSAStreamOps.cpp		\
   audio_hw_hal.cpp \
-  AudioUsbALSA.cpp
+  AudioUsbALSA.cpp \
+  AudioSessionOut.cpp
 
 LOCAL_STATIC_LIBRARIES := \
     libmedia_helper \
@@ -58,12 +61,12 @@ LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
 
-ifeq (1,0) # use default audio policy manager
-# This is the ALSA audio policy manager
-
 include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -D_POSIX_SOURCE
+
+LOCAL_CFLAGS += -DQCOM_ACDB_ENABLED
+LOCAL_CFLAGS += -DQCOM_PROXY_DEVICE_ENABLED
 
 ifeq ($(BOARD_HAVE_BLUETOOTH),true)
   LOCAL_CFLAGS += -DWITH_A2DP
@@ -85,12 +88,12 @@ LOCAL_STATIC_LIBRARIES := \
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libutils \
-    libmedia
+    libmedia \
+    libaudioparameter
 
 LOCAL_C_INCLUDES += hardware/libhardware_legacy/audio
 
 include $(BUILD_SHARED_LIBRARY)
-endif
 
 # Load audio_policy.conf to system/etc/
 include $(CLEAR_VARS)
@@ -111,6 +114,9 @@ LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
 
 LOCAL_CFLAGS := -D_POSIX_SOURCE -Wno-multichar
 
+LOCAL_CFLAGS += -DQCOM_ACDB_ENABLED
+LOCAL_CFLAGS += -DQCOM_PROXY_DEVICE_ENABLED
+
 ifneq ($(ALSA_DEFAULT_SAMPLE_RATE),)
     LOCAL_CFLAGS += -DALSA_DEFAULT_SAMPLE_RATE=$(ALSA_DEFAULT_SAMPLE_RATE)
 endif
@@ -128,6 +134,14 @@ LOCAL_SHARED_LIBRARIES := \
 
 ifeq ($(BOARD_HAVE_HTC_AUDIO),true)
   LOCAL_CFLAGS += -DHTC_VOICE_CONFIG
+endif
+
+ifeq ($(BOARD_HAVE_SAMSUNG_AUDIO),true)
+  LOCAL_CFLAGS += -DSAMSUNG_AUDIO
+endif
+
+ifeq ($(BOARD_HAVE_AUDIENCE_A2220),true)
+  LOCAL_CFLAGS += -DUSE_A2220
 endif
 
 LOCAL_MODULE:= alsa.msm8960

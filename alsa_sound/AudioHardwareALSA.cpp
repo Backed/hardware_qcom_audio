@@ -157,6 +157,35 @@ AudioHardwareALSA::AudioHardwareALSA() :
     } else {
         ALOGE("ALSA Module not found!!!");
     }
+
+    //set default AudioParameters
+    AudioParameter param;
+    String8 key;
+    String8 value;
+
+    //Set default AudioParameter for fluencetype
+    key  = String8(AudioParameter::keyFluenceType);
+    char fluence_key[20] = "none";
+    property_get("ro.qc.sdk.audio.fluencetype",fluence_key,"0");
+    if (0 == strncmp("fluencepro", fluence_key, sizeof("fluencepro"))) {
+        mDevSettingsFlag |= QMIC_FLAG;
+        mDevSettingsFlag &= (~DMIC_FLAG);
+        value = String8("fluencepro");
+        ALOGD("FluencePro quadMic feature Enabled");
+    } else if (0 == strncmp("fluence", fluence_key, sizeof("fluence"))) {
+        mDevSettingsFlag |= DMIC_FLAG;
+        mDevSettingsFlag &= (~QMIC_FLAG);
+        value = String8("fluence");
+        ALOGD("Fluence dualmic feature Enabled");
+    } else if (0 == strncmp("none", fluence_key, sizeof("none"))) {
+        mDevSettingsFlag &= (~DMIC_FLAG);
+        mDevSettingsFlag &= (~QMIC_FLAG);
+        value = String8("none");
+        ALOGD("Fluence feature Disabled");
+    }
+    param.add(key, value);
+    mALSADevice->setFlags(mDevSettingsFlag);
+
 }
 
 AudioHardwareALSA::~AudioHardwareALSA()
@@ -226,6 +255,7 @@ status_t AudioHardwareALSA::setVoiceVolume(float v)
 #ifdef QCOM_FM_ENABLED
 status_t  AudioHardwareALSA::setFmVolume(float value)
 {
+    Mutex::Autolock autoLock(mLock);
     status_t status = NO_ERROR;
 
     int vol;
@@ -298,25 +328,6 @@ status_t AudioHardwareALSA::setParameters(const String8& keyValuePairs)
         if(mMode != AudioSystem::MODE_IN_CALL){
            return NO_ERROR;
         }
-        doRouting(0);
-    }
-
-    key = String8(FLUENCE_KEY);
-    if (param.get(key, value) == NO_ERROR) {
-        if (value == "quadmic") {
-            mDevSettingsFlag |= QMIC_FLAG;
-            mDevSettingsFlag &= (~DMIC_FLAG);
-            ALOGV("Fluence quadMic feature Enabled");
-        } else if (value == "dualmic") {
-            mDevSettingsFlag |= DMIC_FLAG;
-            mDevSettingsFlag &= (~QMIC_FLAG);
-            ALOGV("Fluence dualmic feature Enabled");
-        } else if (value == "none") {
-            mDevSettingsFlag &= (~DMIC_FLAG);
-            mDevSettingsFlag &= (~QMIC_FLAG);
-            ALOGV("Fluence feature Disabled");
-        }
-        mALSADevice->setFlags(mDevSettingsFlag);
         doRouting(0);
     }
 
@@ -449,18 +460,29 @@ String8 AudioHardwareALSA::getParameters(const String8& keys)
         param.add(key, value);
     }
 
-    key = String8(FLUENCE_KEY);
+    key = String8(AudioParameter::keyFluenceType);
     if (param.get(key, value) == NO_ERROR) {
-    if ((mDevSettingsFlag & QMIC_FLAG) &&
-                               (mDevSettingsFlag & ~DMIC_FLAG))
-            value = String8("quadmic");
-    else if ((mDevSettingsFlag & DMIC_FLAG) &&
-                                (mDevSettingsFlag & ~QMIC_FLAG))
-            value = String8("dualmic");
-    else if ((mDevSettingsFlag & ~DMIC_FLAG) &&
-                                (mDevSettingsFlag & ~QMIC_FLAG))
+        char fluence_key[20] = "none";
+        property_get("ro.qc.sdk.audio.fluencetype",fluence_key,"0");
+
+        if (0 == strncmp("fluencepro", fluence_key, sizeof("fluencepro"))) {
+            mDevSettingsFlag |= QMIC_FLAG;
+            mDevSettingsFlag &= (~DMIC_FLAG);
+            value = String8("fluencepro");
+            ALOGD("FluencePro quadMic feature Enabled");
+        } else if (0 == strncmp("fluence", fluence_key, sizeof("fluence"))) {
+            mDevSettingsFlag |= DMIC_FLAG;
+            mDevSettingsFlag &= (~QMIC_FLAG);
+            value = String8("fluence");
+            ALOGD("Fluence dualmic feature Enabled");
+        } else {
+            mDevSettingsFlag &= (~DMIC_FLAG);
+            mDevSettingsFlag &= (~QMIC_FLAG);
             value = String8("none");
+            ALOGD("Fluence feature Disabled");
+        }
         param.add(key, value);
+        mALSADevice->setFlags(mDevSettingsFlag);
     }
 
 #ifdef QCOM_FM_ENABLED
@@ -625,12 +647,33 @@ void AudioHardwareALSA::doRouting(int device)
                               }
                          }
         } else {
+             setInChannels(device);
              ALSAHandleList::iterator it = mDeviceList.end();
              it--;
-             mALSADevice->route(&(*it), (uint32_t)device, newMode);
+             if(device != mCurDevice)
+                 mALSADevice->route(&(*it), (uint32_t)device, newMode);
         }
     }
     mCurDevice = device;
+}
+
+void AudioHardwareALSA::setInChannels(int device)
+{
+     ALSAHandleList::iterator it;
+
+     if (device & AudioSystem::DEVICE_IN_BUILTIN_MIC) {
+         for(it = mDeviceList.begin(); it != mDeviceList.end(); ++it) {
+             if (!strncmp(it->useCase, SND_USE_CASE_VERB_HIFI_REC,
+                 strlen(SND_USE_CASE_VERB_HIFI_REC)) ||
+                 !strncmp(it->useCase, SND_USE_CASE_MOD_CAPTURE_MUSIC,
+                 strlen(SND_USE_CASE_MOD_CAPTURE_MUSIC))) {
+                 mALSADevice->setInChannels(it->channels);
+                 return;
+             }
+         }
+     }
+
+     mALSADevice->setInChannels(1);
 }
 
 uint32_t AudioHardwareALSA::getVoipMode(int format)
@@ -666,6 +709,7 @@ uint32_t AudioHardwareALSA::getVoipMode(int format)
 
 AudioStreamOut *
 AudioHardwareALSA::openOutputStream(uint32_t devices,
+                                    audio_output_flags_t flags,
                                     int *format,
                                     uint32_t *channels,
                                     uint32_t *sampleRate,
@@ -676,6 +720,28 @@ AudioHardwareALSA::openOutputStream(uint32_t devices,
          devices, *channels, *sampleRate);
 
     status_t err = BAD_VALUE;
+    if (flags & AUDIO_OUTPUT_FLAG_LPA) {
+        AudioSessionOutALSA *out = new AudioSessionOutALSA(this, devices, *format, *channels,
+                                                           *sampleRate, 0, &err);
+        if(err != NO_ERROR) {
+            delete out;
+            out = NULL;
+        }
+        if (status) *status = err;
+        return out;
+    }
+
+    if (flags & AUDIO_OUTPUT_FLAG_TUNNEL) {
+        AudioSessionOutALSA *out = new AudioSessionOutALSA(this, devices, *format, *channels,
+                                                           *sampleRate, 1, &err);
+        if(err != NO_ERROR) {
+            delete out;
+            out = NULL;
+        }
+        if (status) *status = err;
+        return out;
+    }
+
     AudioStreamOutALSA *out = 0;
     ALSAHandleList::iterator it;
 
@@ -684,8 +750,8 @@ AudioHardwareALSA::openOutputStream(uint32_t devices,
         ALOGE("openOutputStream called with bad devices");
         return out;
     }
-# if 0
-    if((devices == AudioSystem::DEVICE_OUT_DIRECTOUTPUT) &&
+#if 1
+    if((flags & AUDIO_OUTPUT_FLAG_DIRECT) && (flags & AUDIO_OUTPUT_FLAG_VOIP_RX)&&
        ((*sampleRate == VOIP_SAMPLING_RATE_8K) || (*sampleRate == VOIP_SAMPLING_RATE_16K))) {
         bool voipstream_active = false;
         for(it = mDeviceList.begin();
@@ -746,13 +812,15 @@ AudioHardwareALSA::openOutputStream(uint32_t devices,
               mCurDevice |= AudioSystem::DEVICE_OUT_PROXY;
               alsa_handle.devices = AudioSystem::DEVICE_OUT_PROXY;
               mALSADevice->route(&(*it), mCurDevice, AudioSystem::MODE_IN_COMMUNICATION);
-              ALOGD("enabling VOIP in openoutputstream, musbPlaybackState: %d", musbPlaybackState);
+#ifdef QCOM_USBAUDIO_ENABLED
+                ALOGD("enabling VOIP in openoutputstream, musbPlaybackState: %d", musbPlaybackState);
               startUsbPlaybackIfNotStarted();
               musbPlaybackState |= USBPLAYBACKBIT_VOIPCALL;
               ALOGD("Starting recording in openoutputstream, musbRecordingState: %d", musbRecordingState);
               startUsbRecordingIfNotStarted();
               musbRecordingState |= USBRECBIT_VOIPCALL;
-          } else{
+#endif
+           } else{
               mALSADevice->route(&(*it), mCurDevice, AudioSystem::MODE_IN_COMMUNICATION);
           }
           if(!strcmp(it->useCase, SND_USE_CASE_VERB_IP_VOICECALL)) {
@@ -1034,8 +1102,10 @@ AudioHardwareALSA::openInputStream(uint32_t devices,
            if(sampleRate) {
                it->sampleRate = *sampleRate;
            }
-           if(channels)
+           if(channels) {
                it->channels = AudioSystem::popCount(*channels);
+               setInChannels(devices);
+           }
            err = mALSADevice->startVoipCall(&(*it));
            if (err) {
                ALOGE("Error opening pcm input device");
@@ -1182,6 +1252,7 @@ AudioHardwareALSA::openInputStream(uint32_t devices,
 #endif
                        ));
             ALOGV("updated channel info: channels=%d", it->channels);
+            setInChannels(devices);
         }
         if (devices == AudioSystem::DEVICE_IN_VOICE_CALL){
            /* Add current devices info to devices to do route */
@@ -1455,6 +1526,7 @@ char *use_case;
         alsa_handle.devices = device;
     }
 #endif
+    setInChannels(device);
     mALSADevice->route(&(*it), (uint32_t)device, mode);
     if (!strcmp(it->useCase, verb)) {
         snd_use_case_set(mUcMgr, "_verb", verb);

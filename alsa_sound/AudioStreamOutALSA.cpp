@@ -84,21 +84,7 @@ status_t AudioStreamOutALSA::setVolume(float left, float right)
     }
     vol = lrint((volume * 0x2000)+0.5);
 
-    if(!strcmp(mHandle->useCase, SND_USE_CASE_VERB_HIFI_LOW_POWER) ||
-       !strcmp(mHandle->useCase, SND_USE_CASE_MOD_PLAY_LPA)) {
-        ALOGD("setLpaVolume(%f)\n", volume);
-        ALOGD("Setting LPA volume to %d (available range is 0 to 100)\n", vol);
-        mHandle->module->setLpaVolume(vol);
-        return status;
-    }
-    else if(!strcmp(mHandle->useCase, SND_USE_CASE_VERB_HIFI_TUNNEL) ||
-            !strcmp(mHandle->useCase, SND_USE_CASE_MOD_PLAY_TUNNEL)) {
-        ALOGD("setCompressedVolume(%f)\n", volume);
-        ALOGD("Setting Compressed volume to %d (available range is 0 to 100)\n", vol);
-        mHandle->module->setCompressedVolume(vol);
-        return status;
-    }
-    else if(!strncmp(mHandle->useCase, SND_USE_CASE_VERB_IP_VOICECALL,
+    if(!strncmp(mHandle->useCase, SND_USE_CASE_VERB_IP_VOICECALL,
             sizeof(mHandle->useCase)) || !strncmp(mHandle->useCase,
             SND_USE_CASE_MOD_PLAY_VOIP, sizeof(mHandle->useCase))) {
         ALOGV("Avoid Software volume by returning success\n");
@@ -235,17 +221,19 @@ ssize_t AudioStreamOutALSA::write(const void *buffer, size_t bytes)
         }
         if (n < 0) {
             mParent->mLock.lock();
-            ALOGE("pcm_write returned error %l, trying to recover\n", n);
-            pcm_close(mHandle->handle);
-            mHandle->handle = NULL;
-            if((!strncmp(mHandle->useCase, SND_USE_CASE_VERB_IP_VOICECALL, strlen(SND_USE_CASE_VERB_IP_VOICECALL))) ||
-              (!strncmp(mHandle->useCase, SND_USE_CASE_MOD_PLAY_VOIP, strlen(SND_USE_CASE_MOD_PLAY_VOIP)))) {
-                 pcm_close(mHandle->rxHandle);
-                 mHandle->rxHandle = NULL;
-                 mHandle->module->startVoipCall(mHandle);
+            if (mHandle->handle != NULL) {
+                ALOGE("pcm_write returned error %d, trying to recover\n", n);
+                pcm_close(mHandle->handle);
+                mHandle->handle = NULL;
+                if((!strncmp(mHandle->useCase, SND_USE_CASE_VERB_IP_VOICECALL, strlen(SND_USE_CASE_VERB_IP_VOICECALL))) ||
+                  (!strncmp(mHandle->useCase, SND_USE_CASE_MOD_PLAY_VOIP, strlen(SND_USE_CASE_MOD_PLAY_VOIP)))) {
+                     pcm_close(mHandle->rxHandle);
+                     mHandle->rxHandle = NULL;
+                     mHandle->module->startVoipCall(mHandle);
+                }
+                else
+                    mHandle->module->open(mHandle);
             }
-            else
-            mHandle->module->open(mHandle);
             mParent->mLock.unlock();
             continue;
         }
