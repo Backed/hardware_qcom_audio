@@ -19,6 +19,10 @@ ifeq ($(BOARD_HAVE_QCOM_FM),true)
   LOCAL_CFLAGS += -DQCOM_FM_ENABLED
 endif
 
+ifeq ($(BOARD_USE_QCOM_LPA),true)
+  LOCAL_CFLAGS += -DQCOM_TUNNEL_LPA_ENABLED
+endif
+
 LOCAL_SHARED_LIBRARIES := \
     libcutils       \
     libutils        \
@@ -72,8 +76,6 @@ endif
 
 include $(BUILD_SHARED_LIBRARY)
 
-ifeq ("x","y") # use default audio policy manager
-
 # The audio policy is implemented on top of legacy policy code
 include $(CLEAR_VARS)
 
@@ -110,7 +112,6 @@ LOCAL_CFLAGS += -DBACK_MIC_CAMCORDER
 endif
 
 include $(BUILD_SHARED_LIBRARY)
-endif
 
 # Load audio_policy.conf to system/etc/
 include $(CLEAR_VARS)

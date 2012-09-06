@@ -99,6 +99,12 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
             if (device) break;
             device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET;
             if (device) break;
+#ifdef QCOM_ANC_HEADSET_ENABLED
+            device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_ANC_HEADPHONE;
+            if (device) break;
+            device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_ANC_HEADSET;
+            if (device) break;
+#endif
             device = mAvailableOutputDevices & AUDIO_DEVICE_OUT_USB_ACCESSORY;
             if (device) break;
             device = mAvailableOutputDevices & AUDIO_DEVICE_OUT_USB_DEVICE;
@@ -200,6 +206,14 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
         if (device2 == 0) {
             device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET;
         }
+#ifdef QCOM_ANC_HEADSET_ENABLED
+        if (device2 == 0) {
+            device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_ANC_HEADPHONE;
+        }
+        if (device2 == 0) {
+            device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_ANC_HEADSET;
+        }
+#endif
 #ifdef QCOM_FM_ENABLED
         if (device2 == 0) {
             device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_FM_TX;
@@ -240,9 +254,17 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
            device |= AudioSystem::DEVICE_OUT_FM;
        }
 #endif
-        if (device == 0) {
-            ALOGE("getDeviceForStrategy() no device found for STRATEGY_MEDIA");
-        }
+#ifdef QCOM_ANC_HEADSET_ENABLED
+       if (mAvailableOutputDevices & AudioSystem::DEVICE_OUT_ANC_HEADSET) {
+           device |= AudioSystem::DEVICE_OUT_ANC_HEADSET;
+       }
+       if (mAvailableOutputDevices & AudioSystem::DEVICE_OUT_ANC_HEADPHONE) {
+           device |= AudioSystem::DEVICE_OUT_ANC_HEADPHONE;
+       }
+#endif
+       if (device == 0) {
+           ALOGE("getDeviceForStrategy() no device found for STRATEGY_MEDIA");
+       }
     } break;
 
     default:
@@ -357,14 +379,22 @@ status_t AudioPolicyManager::setDeviceConnectionState(AudioSystem::audio_devices
             return BAD_VALUE;
         }
 
-#ifdef QCOM_FM_ENABLED
         audio_devices_t NewDevice = AudioPolicyManagerBase::getNewDevice(mPrimaryOutput, false /*fromCache*/);
+#ifdef QCOM_FM_ENABLED
         if (device == AudioSystem::DEVICE_OUT_FM) {
             if (state == AudioSystem::DEVICE_STATE_AVAILABLE) {
                 mOutputs.valueFor(mPrimaryOutput)->changeRefCount(AudioSystem::FM, 1);
             }
             else {
                 mOutputs.valueFor(mPrimaryOutput)->changeRefCount(AudioSystem::FM, -1);
+            }
+        }
+#endif
+#ifdef QCOM_ANC_HEADSET_ENABLED
+        if(device == AudioSystem::DEVICE_OUT_ANC_HEADPHONE ||
+            device == AudioSystem::DEVICE_OUT_ANC_HEADSET) {
+            if(NewDevice == 0){
+                NewDevice = getDeviceForStrategy(STRATEGY_MEDIA, false);
             }
         }
 #endif
@@ -394,7 +424,11 @@ status_t AudioPolicyManager::setDeviceConnectionState(AudioSystem::audio_devices
                    device == AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_HEADSET ||
                    device == AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_CARKIT) {
             device = AudioSystem::DEVICE_IN_BLUETOOTH_SCO_HEADSET;
-        } else {
+#ifdef QCOM_ANC_HEADSET_ENABLED
+        } else if (device == AudioSystem::DEVICE_OUT_ANC_HEADSET) {
+            device =  AudioSystem::DEVICE_IN_ANC_HEADSET; //wait for actual ANC device
+#endif
+        }else {
             return NO_ERROR;
         }
     }
@@ -491,13 +525,8 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output, AudioSystem::
                 }
             }
         }
-#ifdef QCOM_FM_ENABLED
-    if(stream == AudioSystem::FM && output == getA2dpOutput()) {
+
         setOutputDevice(output, AudioPolicyManagerBase::getNewDevice((output), true));
-    } else {
-        setOutputDevice(output, AudioPolicyManagerBase::getNewDevice((output), true));
-    }
-#endif
 
         // handle special case for sonification while in call
         if (isInCall()) {
@@ -796,6 +825,10 @@ audio_devices_t AudioPolicyManager::getDeviceForInputSource(int inputSource)
             device = AudioSystem::DEVICE_IN_BLUETOOTH_SCO_HEADSET;
         } else if (mAvailableInputDevices & AudioSystem::DEVICE_IN_WIRED_HEADSET) {
             device = AudioSystem::DEVICE_IN_WIRED_HEADSET;
+#ifdef QCOM_ANC_HEADSET_ENABLED
+        } else if (mAvailableInputDevices & AudioSystem::DEVICE_IN_ANC_HEADSET) {
+            device = AudioSystem::DEVICE_IN_ANC_HEADSET;
+#endif
         } else if (mAvailableInputDevices & AudioSystem::DEVICE_IN_BUILTIN_MIC) {
             device = AudioSystem::DEVICE_IN_BUILTIN_MIC;
         }
